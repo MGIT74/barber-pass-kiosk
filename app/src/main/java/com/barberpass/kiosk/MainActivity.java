@@ -13,6 +13,9 @@ import android.net.Uri;
 public class MainActivity extends Activity {
   private static final String DEFAULT_URL="https://app.thebarberone.com/kiosk.html?salon=the-barber-one-oyonnax";
   private WebView web;
+  private TextView status;
+  private FrameLayout root;
+  private boolean loaded=false;
   private SharedPreferences prefs;
   private int taps=0;
   private long lastTap=0;
@@ -22,10 +25,19 @@ public class MainActivity extends Activity {
     prefs=getSharedPreferences("kiosk",MODE_PRIVATE);
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     immersive();
-    FrameLayout root=new FrameLayout(this);
+    root=new FrameLayout(this);
     root.setBackgroundColor(Color.WHITE);
     web=new WebView(this);
     root.addView(web,new FrameLayout.LayoutParams(-1,-1));
+    status=new TextView(this);
+    status.setTextColor(Color.BLACK);
+    status.setBackgroundColor(0xFFF4F4F4);
+    status.setPadding(24,24,24,24);
+    status.setTextSize(17);
+    status.setText("Chargement de Barber Pass...");
+    status.setGravity(Gravity.CENTER);
+    root.addView(status,new FrameLayout.LayoutParams(-1,-1));
+    status.setOnClickListener(v->showTroubleshooting());
     View adminHotspot=new View(this);
     FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(
       (int)(72*getResources().getDisplayMetrics().density),
@@ -48,14 +60,42 @@ public class MainActivity extends Activity {
     s.setSupportMultipleWindows(false);
     CookieManager.getInstance().setAcceptCookie(true);
     web.setWebViewClient(new WebViewClient(){
+      @Override public void onPageStarted(WebView v,String url,android.graphics.Bitmap icon){loaded=false;status.setVisibility(View.VISIBLE);status.setText("Chargement de Barber Pass...\\n\\nTouchez ici si la page ne s’affiche pas.");}
+      @Override public void onPageFinished(WebView v,String url){loaded=true;status.setVisibility(View.GONE);}
+      @Override public void onReceivedError(WebView v,WebResourceRequest request,WebResourceError error){
+        if(request.isForMainFrame()) showError("Erreur de connexion : " + error.getDescription());
+      }
+      @Override public void onReceivedHttpError(WebView v,WebResourceRequest request,WebResourceResponse response){
+        if(request.isForMainFrame()) showError("Erreur HTTP " + response.getStatusCode());
+      }
+      @Override public void onReceivedSslError(WebView v,android.webkit.SslErrorHandler handler,android.net.http.SslError error){handler.cancel();showError("Erreur de certificat HTTPS : " + error.toString());}
+
       @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req){
         return !isAllowed(req.getUrl().toString());
       }
     });
-    web.setWebChromeClient(new WebChromeClient());
+    web.setWebChromeClient(new WebChromeClient(){
+      @Override public boolean onConsoleMessage(ConsoleMessage m){
+        if(m.messageLevel()==ConsoleMessage.MessageLevel.ERROR) runOnUiThread(()->{
+          if(status.getVisibility()!=View.VISIBLE){status.setText("Erreur JavaScript : " + m.message() + "\\n\\nTouchez ici pour les options.");status.setVisibility(View.VISIBLE);}
+        });
+        return true;
+      }
+    });
     if(!prefs.contains("url")) configure(false); else load();
   }
 
+  private void showError(String message){runOnUiThread(()->{status.setText(message+"\\n\\nTouchez ici pour les options.");status.setVisibility(View.VISIBLE);});}
+  private void showTroubleshooting(){
+    String version="inconnue";
+    try { android.content.pm.PackageInfo p=WebView.getCurrentWebViewPackage();if(p!=null)version=p.versionName; } catch(Exception ignored){}
+    final String webviewVersion=version;
+    new AlertDialog.Builder(this).setTitle("Diagnostic Barber Pass")
+      .setMessage("Version Android : "+Build.VERSION.RELEASE+"\\nWebView : "+webviewVersion+"\\n\\nSi la borne reste blanche, mettez à jour Android System WebView ou Chrome, ou essayez le navigateur.")
+      .setPositiveButton("Ouvrir dans Chrome",(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(prefs.getString("url",DEFAULT_URL))));}catch(Exception e){Toast.makeText(this,"Navigateur indisponible",Toast.LENGTH_LONG).show();}})
+      .setNeutralButton("Réessayer",(d,w)->load())
+      .setNegativeButton("Fermer",null).show();
+  }
   private boolean isAllowed(String url){
     Uri u=Uri.parse(url);
     return "https".equalsIgnoreCase(u.getScheme())
@@ -71,7 +111,7 @@ public class MainActivity extends Activity {
   }
   private void load(){
     String url=prefs.getString("url",DEFAULT_URL);
-    if(isAllowed(url))web.loadUrl(url);
+    if(isAllowed(url)){status.setVisibility(View.VISIBLE);status.setText("Chargement de Barber Pass...");web.loadUrl(url);}
   }
 
   private void configure(boolean cancelable){
