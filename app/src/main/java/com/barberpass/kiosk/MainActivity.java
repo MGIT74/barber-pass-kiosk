@@ -17,6 +17,7 @@ public class MainActivity extends Activity {
   private FrameLayout root;
   private boolean loaded=false;
   private boolean chromeOpened=false;
+  private boolean pageError=false;
   private SharedPreferences prefs;
   private int taps=0;
   private long lastTap=0;
@@ -59,10 +60,14 @@ public class MainActivity extends Activity {
     s.setAllowContentAccess(false);
     s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
     s.setSupportMultipleWindows(false);
+    s.setJavaScriptCanOpenWindowsAutomatically(false);
+    s.setCacheMode(WebSettings.LOAD_DEFAULT);
+    s.setMediaPlaybackRequiresUserGesture(false);
+    web.setLayerType(View.LAYER_TYPE_HARDWARE,null);
     CookieManager.getInstance().setAcceptCookie(true);
     web.setWebViewClient(new WebViewClient(){
-      @Override public void onPageStarted(WebView v,String url,android.graphics.Bitmap icon){loaded=false;status.setVisibility(View.VISIBLE);status.setText("Chargement de Barber Pass...\\n\\nTouchez ici si la page ne s’affiche pas.");}
-      @Override public void onPageFinished(WebView v,String url){loaded=true;status.setVisibility(View.GONE);}
+      @Override public void onPageStarted(WebView v,String url,android.graphics.Bitmap icon){loaded=false;pageError=false;status.setVisibility(View.VISIBLE);status.setText("Chargement de Barber Pass...\\n\\nTouchez ici si la page ne s’affiche pas.");}
+      @Override public void onPageFinished(WebView v,String url){loaded=true;if(!pageError)status.setVisibility(View.GONE);}
       @Override public void onReceivedError(WebView v,WebResourceRequest request,WebResourceError error){
         if(request.isForMainFrame()) showError("Erreur de connexion : " + error.getDescription());
       }
@@ -86,14 +91,14 @@ public class MainActivity extends Activity {
     if(!prefs.contains("url")) configure(false); else load();
   }
 
-  private void showError(String message){runOnUiThread(()->{status.setText(message+"\\n\\nTouchez ici pour les options.");status.setVisibility(View.VISIBLE);});}
+  private void showError(String message){pageError=true;runOnUiThread(()->{status.setText(message+"\\n\\nTouchez ici pour les options.");status.setVisibility(View.VISIBLE);});}
   private void showTroubleshooting(){
     String version="inconnue";
     try { android.content.pm.PackageInfo p=getPackageManager().getPackageInfo("com.google.android.webview",0);if(p!=null)version=p.versionName; } catch(Exception ignored){}
     final String webviewVersion=version;
     new AlertDialog.Builder(this).setTitle("Diagnostic Barber Pass")
       .setMessage("Version Android : "+Build.VERSION.RELEASE+"\\nWebView : "+webviewVersion+"\\n\\nSi la borne reste blanche, mettez à jour Android System WebView ou Chrome, ou essayez le navigateur.")
-      .setPositiveButton("Ouvrir dans Chrome",(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(prefs.getString("url",DEFAULT_URL))));}catch(Exception e){Toast.makeText(this,"Navigateur indisponible",Toast.LENGTH_LONG).show();}})
+      .setPositiveButton("Ouvrir dans Chrome",(d,w)->{openChrome();})
       .setNeutralButton("Réessayer",(d,w)->load())
       .setNegativeButton("Fermer",null).show();
   }
@@ -114,17 +119,19 @@ public class MainActivity extends Activity {
     String url=prefs.getString("url",DEFAULT_URL);
     if(!isAllowed(url))return;
     status.setVisibility(View.VISIBLE);
-    status.setText("Barber Pass Kiosk v1.3\\n\\nOuverture dans Chrome...\\n\\nTouchez cet écran pour ouvrir Chrome manuellement si nécessaire.\\n\\nPour changer de salon : 6 touches rapides en haut à gauche.");
+    status.setText("Chargement de la borne plein écran...\\n\\nSi la page reste blanche, touchez ici pour ouvrir Chrome.");
+    pageError=false;
+    web.loadUrl(url);
+    new Handler(Looper.getMainLooper()).postDelayed(()->{
+      if(!loaded && !pageError)showError("Le navigateur intégré ne répond pas. Essayez Chrome.");
+    },12000);
+  }
+  private void openChrome(){
     try {
-      Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
+      Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(prefs.getString("url",DEFAULT_URL)));
       intent.setPackage("com.android.chrome");
       startActivity(intent);
-      chromeOpened=true;
-      status.setText("Barber Pass Kiosk v1.3\\n\\nChrome a été demandé. Si la borne ne s’affiche pas, touchez ici puis choisissez Ouvrir dans Chrome.");
-    }catch(Exception e){
-      chromeOpened=false;
-      showError("Chrome indisponible : " + e.getMessage());
-    }
+    }catch(Exception e){showError("Impossible d'ouvrir Chrome : "+e.getMessage());}
   }
 
   private void configure(boolean cancelable){
@@ -184,12 +191,13 @@ public class MainActivity extends Activity {
       }).show();
   }
   private void adminMenu(){
-    String[] actions={"Changer de salon","Actualiser la borne","Changer le code PIN"};
+    String[] actions={"Changer de salon","Actualiser la borne","Ouvrir dans Chrome","Changer le code PIN"};
     new AlertDialog.Builder(this).setTitle("Administration Barber Pass")
       .setItems(actions,(d,which)->{
         if(which==0)configure(true);
         if(which==1)load();
-        if(which==2){prefs.edit().remove("pin").apply();setPin();}
+        if(which==2)openChrome();
+        if(which==3){prefs.edit().remove("pin").apply();setPin();}
       }).setNegativeButton("Fermer",null).show();
   }
   @Override public void onBackPressed(){ /* prevent accidental web navigation */ }
