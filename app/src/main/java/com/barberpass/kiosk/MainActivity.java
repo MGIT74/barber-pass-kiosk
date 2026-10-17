@@ -119,7 +119,6 @@ public class MainActivity extends Activity {
       Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
       intent.setPackage("com.android.chrome");
       intent.addCategory(Intent.CATEGORY_BROWSABLE);
-      intent.putExtra("android.support.customtabs.extra.SESSION",(android.os.IBinder)null);
       intent.putExtra("android.support.customtabs.extra.TOOLBAR_COLOR",Color.BLACK);
       startActivity(intent);
       chromeOpened=true;
