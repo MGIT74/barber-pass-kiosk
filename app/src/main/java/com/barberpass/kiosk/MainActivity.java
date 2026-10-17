@@ -9,6 +9,8 @@ import android.webkit.*;
 import android.widget.*;
 import android.text.InputType;
 import android.net.Uri;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 
 public class MainActivity extends Activity {
   private static final String DEFAULT_URL="https://app.thebarberone.com/kiosk.html?salon=the-barber-one-oyonnax";
@@ -47,6 +49,22 @@ public class MainActivity extends Activity {
       (int)(72*getResources().getDisplayMetrics().density),
       Gravity.TOP|Gravity.START);
     root.addView(adminHotspot,hp);
+    TextView exitBubble=new TextView(this);
+    exitBubble.setText("⏻");
+    exitBubble.setTextSize(25);
+    exitBubble.setGravity(Gravity.CENTER);
+    exitBubble.setTextColor(Color.WHITE);
+    android.graphics.drawable.GradientDrawable bubbleBg=new android.graphics.drawable.GradientDrawable();
+    bubbleBg.setColor(0xCC222222);
+    bubbleBg.setCornerRadius(1000);
+    exitBubble.setBackground(bubbleBg);
+    int bubbleSize=(int)(52*getResources().getDisplayMetrics().density);
+    int margin=(int)(16*getResources().getDisplayMetrics().density);
+    FrameLayout.LayoutParams ep=new FrameLayout.LayoutParams(bubbleSize,bubbleSize,Gravity.BOTTOM|Gravity.RIGHT);
+    ep.setMargins(margin,margin,margin,margin);
+    root.addView(exitBubble,ep);
+    exitBubble.setContentDescription("Sortir de la borne avec le code administrateur");
+    exitBubble.setOnClickListener(v->requestExit());
     adminHotspot.setOnClickListener(v->{
       long now=System.currentTimeMillis();
       taps=now-lastTap<1600?taps+1:1;
@@ -94,9 +112,32 @@ public class MainActivity extends Activity {
     if(kioskLockEnabled)root.postDelayed(()->startKioskLock(),1200);
   }
 
+  private boolean isDeviceOwner(){
+    DevicePolicyManager dpm=(DevicePolicyManager)getSystemService(DEVICE_POLICY_SERVICE);
+    return dpm!=null && dpm.isDeviceOwnerApp(getPackageName());
+  }
+  private void requestExit(){
+    if(!prefs.contains("pin")){setPin();return;}
+    EditText input=new EditText(this);
+    input.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+    new AlertDialog.Builder(this).setTitle("Sortir de Barber Pass")
+      .setMessage("Saisissez le code PIN administrateur pour quitter la borne.")
+      .setView(input).setNegativeButton("Annuler",null)
+      .setPositiveButton("Déverrouiller",(d,w)->{
+        if(input.getText().toString().equals(prefs.getString("pin",""))){
+          kioskLockEnabled=false;
+          prefs.edit().putBoolean("kiosk_lock",false).apply();
+          stopKioskLock();
+          finish();
+        }else Toast.makeText(this,"Code incorrect",Toast.LENGTH_SHORT).show();
+      }).show();
+  }
   private void startKioskLock(){
     if(Build.VERSION.SDK_INT<21)return;
     try {
+      if(!prefs.contains("pin")){kioskLockEnabled=false;prefs.edit().putBoolean("kiosk_lock",false).apply();setPin();return;}
+      DevicePolicyManager dpm=(DevicePolicyManager)getSystemService(DEVICE_POLICY_SERVICE);
+      if(isDeviceOwner())dpm.setLockTaskPackages(new ComponentName(this,KioskAdminReceiver.class),new String[]{getPackageName()});
       ActivityManager am=(ActivityManager)getSystemService(ACTIVITY_SERVICE);
       if(am.getLockTaskModeState()==ActivityManager.LOCK_TASK_MODE_NONE)startLockTask();
     }catch(Exception e){Toast.makeText(this,"Verrouillage indisponible : "+e.getMessage(),Toast.LENGTH_LONG).show();}
@@ -204,7 +245,7 @@ public class MainActivity extends Activity {
       }).show();
   }
   private void adminMenu(){
-    String[] actions={"Changer de salon","Actualiser la borne","Ouvrir dans Chrome","Changer le code PIN",kioskLockEnabled?"Désactiver le verrouillage":"Activer le verrouillage écran","Quitter le mode kiosque"};
+    String[] actions={"Changer de salon","Actualiser la borne","Ouvrir dans Chrome","Changer le code PIN",kioskLockEnabled?"Désactiver le verrouillage":"Activer le verrouillage écran","Quitter le mode kiosque","Statut du verrouillage"};
     new AlertDialog.Builder(this).setTitle("Administration Barber Pass")
       .setItems(actions,(d,which)->{
         if(which==0)configure(true);
@@ -214,13 +255,16 @@ public class MainActivity extends Activity {
         if(which==4){
           kioskLockEnabled=!kioskLockEnabled;
           prefs.edit().putBoolean("kiosk_lock",kioskLockEnabled).apply();
-          if(kioskLockEnabled)new AlertDialog.Builder(this).setTitle("Épinglage Android")
-            .setMessage("Activez l’épinglage des fenêtres dans les paramètres de sécurité Android si nécessaire. Android peut demander une confirmation. Sans mode propriétaire de l’appareil, le client peut encore désépingler avec la combinaison système.")
+          if(kioskLockEnabled)new AlertDialog.Builder(this).setTitle("Verrouillage Android")
+            .setMessage(isDeviceOwner()?"Le mode administrateur Android est actif. Les boutons Home et Applications récentes seront bloqués.":"Activez l’épinglage des fenêtres dans les paramètres de sécurité Android. Sans mode administrateur, les touches système permettent encore de désépingler.")
             .setPositiveButton("Activer",(dd,ww)->startKioskLock())
             .setNegativeButton("Annuler",(dd,ww)->{kioskLockEnabled=false;prefs.edit().putBoolean("kiosk_lock",false).apply();}).show();
           else stopKioskLock();
         }
         if(which==5){stopKioskLock();kioskLockEnabled=false;prefs.edit().putBoolean("kiosk_lock",false).apply();finish();}
+        if(which==6)new AlertDialog.Builder(this).setTitle("Protection de la tablette")
+          .setMessage(isDeviceOwner()?"Mode administrateur Android actif : Home, Retour et Applications récentes sont verrouillables.":"Mode administrateur Android non activé. Le simple épinglage peut être désactivé par les touches système. Une configuration Device Owner séparée est nécessaire pour bloquer Home et Applications récentes.")
+          .setPositiveButton("OK",null).show();
       }).setNegativeButton("Fermer",null).show();
   }
   @Override public void onBackPressed(){ /* prevent accidental web navigation */ }
