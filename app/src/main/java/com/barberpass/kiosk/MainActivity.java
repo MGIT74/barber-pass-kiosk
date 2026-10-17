@@ -88,7 +88,7 @@ public class MainActivity extends Activity {
   private void showError(String message){runOnUiThread(()->{status.setText(message+"\\n\\nTouchez ici pour les options.");status.setVisibility(View.VISIBLE);});}
   private void showTroubleshooting(){
     String version="inconnue";
-    try { android.content.pm.PackageInfo p=WebView.getCurrentWebViewPackage();if(p!=null)version=p.versionName; } catch(Exception ignored){}
+    try { android.content.pm.PackageInfo p=getPackageManager().getPackageInfo("com.google.android.webview",0);if(p!=null)version=p.versionName; } catch(Exception ignored){}
     final String webviewVersion=version;
     new AlertDialog.Builder(this).setTitle("Diagnostic Barber Pass")
       .setMessage("Version Android : "+Build.VERSION.RELEASE+"\\nWebView : "+webviewVersion+"\\n\\nSi la borne reste blanche, mettez à jour Android System WebView ou Chrome, ou essayez le navigateur.")
