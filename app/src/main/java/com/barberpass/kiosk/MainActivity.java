@@ -64,7 +64,32 @@ public class MainActivity extends Activity {
     ep.setMargins(margin,margin,margin,margin);
     root.addView(exitBubble,ep);
     exitBubble.setContentDescription("Sortir de la borne avec le code administrateur");
-    exitBubble.setOnClickListener(v->requestExit());
+    final Handler exitHandler=new Handler(Looper.getMainLooper());
+    final Runnable exitAction=()->requestExit();
+    exitBubble.setOnTouchListener(new View.OnTouchListener(){
+      private float downX,downY;
+      private boolean pending=false;
+      @Override public boolean onTouch(View v,android.view.MotionEvent event){
+        switch(event.getActionMasked()){
+          case android.view.MotionEvent.ACTION_DOWN:
+            downX=event.getX();downY=event.getY();
+            pending=true;
+            exitHandler.postDelayed(exitAction,3000);
+            return true;
+          case android.view.MotionEvent.ACTION_MOVE:
+            if(Math.abs(event.getX()-downX)>24*getResources().getDisplayMetrics().density
+              ||Math.abs(event.getY()-downY)>24*getResources().getDisplayMetrics().density){
+              pending=false;exitHandler.removeCallbacks(exitAction);
+            }
+            return true;
+          case android.view.MotionEvent.ACTION_UP:
+          case android.view.MotionEvent.ACTION_CANCEL:
+            pending=false;exitHandler.removeCallbacks(exitAction);
+            return true;
+          default:return true;
+        }
+      }
+    });
     adminHotspot.setOnClickListener(v->{
       long now=System.currentTimeMillis();
       taps=now-lastTap<1600?taps+1:1;
