@@ -114,18 +114,16 @@ public class MainActivity extends Activity {
     String url=prefs.getString("url",DEFAULT_URL);
     if(!isAllowed(url))return;
     status.setVisibility(View.VISIBLE);
-    status.setText("Ouverture de Barber Pass dans Chrome...\\n\\nPour modifier le salon, revenez dans cette application puis touchez 6 fois le coin supérieur gauche.");
+    status.setText("Barber Pass Kiosk v1.3\\n\\nOuverture dans Chrome...\\n\\nTouchez cet écran pour ouvrir Chrome manuellement si nécessaire.\\n\\nPour changer de salon : 6 touches rapides en haut à gauche.");
     try {
       Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
       intent.setPackage("com.android.chrome");
-      intent.addCategory(Intent.CATEGORY_BROWSABLE);
-      intent.putExtra("android.support.customtabs.extra.TOOLBAR_COLOR",Color.BLACK);
       startActivity(intent);
       chromeOpened=true;
+      status.setText("Barber Pass Kiosk v1.3\\n\\nChrome a été demandé. Si la borne ne s’affiche pas, touchez ici puis choisissez Ouvrir dans Chrome.");
     }catch(Exception e){
       chromeOpened=false;
-      status.setText("Chrome indisponible : ouverture du navigateur intégré...");
-      web.loadUrl(url);
+      showError("Chrome indisponible : " + e.getMessage());
     }
   }
 
