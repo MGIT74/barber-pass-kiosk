@@ -18,6 +18,7 @@ public class MainActivity extends Activity {
   private boolean loaded=false;
   private boolean chromeOpened=false;
   private boolean pageError=false;
+  private boolean kioskLockEnabled=false;
   private SharedPreferences prefs;
   private int taps=0;
   private long lastTap=0;
@@ -53,6 +54,7 @@ public class MainActivity extends Activity {
       if(taps>=6){taps=0;adminLogin();}
     });
     setContentView(root);
+    kioskLockEnabled=prefs.getBoolean("kiosk_lock",false);
     WebSettings s=web.getSettings();
     s.setJavaScriptEnabled(true);
     s.setDomStorageEnabled(true);
@@ -89,8 +91,19 @@ public class MainActivity extends Activity {
       }
     });
     if(!prefs.contains("url")) configure(false); else load();
+    if(kioskLockEnabled)root.postDelayed(()->startKioskLock(),1200);
   }
 
+  private void startKioskLock(){
+    if(Build.VERSION.SDK_INT<21)return;
+    try {
+      ActivityManager am=(ActivityManager)getSystemService(ACTIVITY_SERVICE);
+      if(am.getLockTaskModeState()==ActivityManager.LOCK_TASK_MODE_NONE)startLockTask();
+    }catch(Exception e){Toast.makeText(this,"Verrouillage indisponible : "+e.getMessage(),Toast.LENGTH_LONG).show();}
+  }
+  private void stopKioskLock(){
+    try{stopLockTask();}catch(Exception ignored){}
+  }
   private void showError(String message){pageError=true;runOnUiThread(()->{status.setText(message+"\\n\\nTouchez ici pour les options.");status.setVisibility(View.VISIBLE);});}
   private void showTroubleshooting(){
     String version="inconnue";
@@ -191,13 +204,23 @@ public class MainActivity extends Activity {
       }).show();
   }
   private void adminMenu(){
-    String[] actions={"Changer de salon","Actualiser la borne","Ouvrir dans Chrome","Changer le code PIN"};
+    String[] actions={"Changer de salon","Actualiser la borne","Ouvrir dans Chrome","Changer le code PIN",kioskLockEnabled?"Désactiver le verrouillage":"Activer le verrouillage écran","Quitter le mode kiosque"};
     new AlertDialog.Builder(this).setTitle("Administration Barber Pass")
       .setItems(actions,(d,which)->{
         if(which==0)configure(true);
         if(which==1)load();
         if(which==2)openChrome();
         if(which==3){prefs.edit().remove("pin").apply();setPin();}
+        if(which==4){
+          kioskLockEnabled=!kioskLockEnabled;
+          prefs.edit().putBoolean("kiosk_lock",kioskLockEnabled).apply();
+          if(kioskLockEnabled)new AlertDialog.Builder(this).setTitle("Épinglage Android")
+            .setMessage("Activez l’épinglage des fenêtres dans les paramètres de sécurité Android si nécessaire. Android peut demander une confirmation. Sans mode propriétaire de l’appareil, le client peut encore désépingler avec la combinaison système.")
+            .setPositiveButton("Activer",(dd,ww)->startKioskLock())
+            .setNegativeButton("Annuler",(dd,ww)->{kioskLockEnabled=false;prefs.edit().putBoolean("kiosk_lock",false).apply();}).show();
+          else stopKioskLock();
+        }
+        if(which==5){stopKioskLock();kioskLockEnabled=false;prefs.edit().putBoolean("kiosk_lock",false).apply();finish();}
       }).setNegativeButton("Fermer",null).show();
   }
   @Override public void onBackPressed(){ /* prevent accidental web navigation */ }
