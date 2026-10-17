@@ -16,6 +16,7 @@ public class MainActivity extends Activity {
   private TextView status;
   private FrameLayout root;
   private boolean loaded=false;
+  private boolean chromeOpened=false;
   private SharedPreferences prefs;
   private int taps=0;
   private long lastTap=0;
@@ -111,7 +112,22 @@ public class MainActivity extends Activity {
   }
   private void load(){
     String url=prefs.getString("url",DEFAULT_URL);
-    if(isAllowed(url)){status.setVisibility(View.VISIBLE);status.setText("Chargement de Barber Pass...");web.loadUrl(url);}
+    if(!isAllowed(url))return;
+    status.setVisibility(View.VISIBLE);
+    status.setText("Ouverture de Barber Pass dans Chrome...\\n\\nPour modifier le salon, revenez dans cette application puis touchez 6 fois le coin supérieur gauche.");
+    try {
+      Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
+      intent.setPackage("com.android.chrome");
+      intent.addCategory(Intent.CATEGORY_BROWSABLE);
+      intent.putExtra("android.support.customtabs.extra.SESSION",(android.os.IBinder)null);
+      intent.putExtra("android.support.customtabs.extra.TOOLBAR_COLOR",Color.BLACK);
+      startActivity(intent);
+      chromeOpened=true;
+    }catch(Exception e){
+      chromeOpened=false;
+      status.setText("Chrome indisponible : ouverture du navigateur intégré...");
+      web.loadUrl(url);
+    }
   }
 
   private void configure(boolean cancelable){
@@ -175,7 +191,7 @@ public class MainActivity extends Activity {
     new AlertDialog.Builder(this).setTitle("Administration Barber Pass")
       .setItems(actions,(d,which)->{
         if(which==0)configure(true);
-        if(which==1)web.reload();
+        if(which==1)load();
         if(which==2){prefs.edit().remove("pin").apply();setPin();}
       }).setNegativeButton("Fermer",null).show();
   }
