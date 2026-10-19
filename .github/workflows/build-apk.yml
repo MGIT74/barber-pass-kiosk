@@ -21,10 +21,30 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Prepare Barber One launcher logo
+      - name: Prepare high contrast Barber One launcher icon
         run: |
-          mkdir -p app/src/main/res/drawable
-          base64 -d branding/barber_logo.png.base64 > app/src/main/res/drawable/barber_logo.png
+          python -m pip install --quiet Pillow
+          mkdir -p app/src/main/res/drawable-nodpi
+          base64 -d branding/barber_logo.png.base64 > /tmp/barber_source.png
+          python - <<'PY'
+          from PIL import Image, ImageEnhance, ImageFilter
+          src=Image.open('/tmp/barber_source.png').convert('RGBA')
+          # The small tagline becomes unreadable on a launcher: use only the main brand mark.
+          # The source has transparent background; explicitly make the icon black and white.
+          alpha=src.getchannel('A')
+          bbox=alpha.getbbox()
+          if bbox:
+              src=src.crop(bbox)
+          w,h=src.size
+          src=src.crop((0,0,w,int(h*0.91)))
+          bg=Image.new('RGBA',src.size,(0,0,0,255))
+          bg.alpha_composite(src)
+          icon=Image.new('RGB',(512,512),(0,0,0))
+          fitted=bg.convert('RGB')
+          fitted.thumbnail((440,440),Image.Resampling.LANCZOS)
+          icon.paste(fitted,((512-fitted.width)//2,(512-fitted.height)//2))
+          icon.save('app/src/main/res/drawable-nodpi/barber_logo.png',optimize=True)
+          PY
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
