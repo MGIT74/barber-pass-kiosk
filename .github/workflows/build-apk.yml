@@ -41,7 +41,9 @@ jobs:
           bg.alpha_composite(src)
           icon=Image.new('RGB',(512,512),(0,0,0))
           fitted=bg.convert('RGB')
-          fitted.thumbnail((440,440),Image.Resampling.LANCZOS)
+          # Upscale the cropped logo instead of thumbnail() (which never enlarges).
+          scale=min(440/fitted.width,440/fitted.height)
+          fitted=fitted.resize((round(fitted.width*scale),round(fitted.height*scale)),Image.Resampling.LANCZOS)
           icon.paste(fitted,((512-fitted.width)//2,(512-fitted.height)//2))
           icon.save('app/src/main/res/drawable-nodpi/barber_logo.png',optimize=True)
           PY
