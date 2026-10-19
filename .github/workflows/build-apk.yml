@@ -22,7 +22,9 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Prepare Barber One launcher logo
-        run: base64 -d branding/barber_logo.png.base64 > app/src/main/res/drawable/barber_logo.png
+        run: |
+          mkdir -p app/src/main/res/drawable
+          base64 -d branding/barber_logo.png.base64 > app/src/main/res/drawable/barber_logo.png
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
