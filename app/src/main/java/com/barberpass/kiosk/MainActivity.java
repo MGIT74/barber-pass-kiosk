@@ -11,6 +11,9 @@ import android.text.InputType;
 import android.net.Uri;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
+import android.graphics.Point;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class MainActivity extends Activity {
   private static final String DEFAULT_URL="https://app.thebarberone.com/kiosk.html?salon=the-barber-one-oyonnax";
@@ -22,6 +25,9 @@ public class MainActivity extends Activity {
   private boolean pageError=false;
   private boolean kioskLockEnabled=false;
   private SharedPreferences prefs;
+  private static final String SCREENS_KEY="screens_v1";
+  private TextView exitBubble;
+  private boolean bubbleMoved=false;
   private int taps=0;
   private long lastTap=0;
 
@@ -49,8 +55,8 @@ public class MainActivity extends Activity {
       (int)(72*getResources().getDisplayMetrics().density),
       Gravity.TOP|Gravity.START);
     root.addView(adminHotspot,hp);
-    TextView exitBubble=new TextView(this);
-    exitBubble.setText("⏻");
+    exitBubble=new TextView(this);
+    exitBubble.setText("⚙");
     exitBubble.setTextSize(25);
     exitBubble.setGravity(Gravity.CENTER);
     exitBubble.setTextColor(Color.WHITE);
@@ -64,30 +70,49 @@ public class MainActivity extends Activity {
     ep.setMargins(margin,margin,margin,margin);
     root.addView(exitBubble,ep);
     exitBubble.setContentDescription("Sortir de la borne avec le code administrateur");
-    final Handler exitHandler=new Handler(Looper.getMainLooper());
-    final Runnable exitAction=()->requestExit();
+    final Handler bubbleHandler=new Handler(Looper.getMainLooper());
     exitBubble.setOnTouchListener(new View.OnTouchListener(){
-      private float downX,downY;
-      private boolean pending=false;
-      @Override public boolean onTouch(View v,android.view.MotionEvent event){
-        switch(event.getActionMasked()){
-          case android.view.MotionEvent.ACTION_DOWN:
-            downX=event.getX();downY=event.getY();
-            pending=true;
-            exitHandler.postDelayed(exitAction,3000);
+      float startRawX,startRawY,startX,startY;
+      boolean longPressed=false,dragged=false;
+      Runnable action;
+      @Override public boolean onTouch(View v,android.view.MotionEvent e){
+        switch(e.getActionMasked()){
+          case MotionEvent.ACTION_DOWN:
+            startRawX=e.getRawX();startRawY=e.getRawY();
+            startX=v.getX();startY=v.getY();
+            dragged=false;longPressed=false;
+            action=()->{if(!dragged){longPressed=true;adminLogin();}};
+            bubbleHandler.postDelayed(action,3000);
             return true;
-          case android.view.MotionEvent.ACTION_MOVE:
-            if(Math.abs(event.getX()-downX)>24*getResources().getDisplayMetrics().density
-              ||Math.abs(event.getY()-downY)>24*getResources().getDisplayMetrics().density){
-              pending=false;exitHandler.removeCallbacks(exitAction);
+          case MotionEvent.ACTION_MOVE:
+            float dx=e.getRawX()-startRawX,dy=e.getRawY()-startRawY;
+            if(Math.abs(dx)>12*getResources().getDisplayMetrics().density
+              ||Math.abs(dy)>12*getResources().getDisplayMetrics().density){
+              dragged=true;bubbleHandler.removeCallbacks(action);
+            }
+            if(dragged){
+              v.setX(Math.max(0,Math.min(root.getWidth()-v.getWidth(),startX+dx)));
+              v.setY(Math.max(0,Math.min(root.getHeight()-v.getHeight(),startY+dy)));
             }
             return true;
-          case android.view.MotionEvent.ACTION_UP:
-          case android.view.MotionEvent.ACTION_CANCEL:
-            pending=false;exitHandler.removeCallbacks(exitAction);
+          case MotionEvent.ACTION_UP:
+          case MotionEvent.ACTION_CANCEL:
+            bubbleHandler.removeCallbacks(action);
+            if(dragged){
+              prefs.edit().putFloat("bubble_x",v.getX()/Math.max(1,root.getWidth()-v.getWidth()))
+                .putFloat("bubble_y",v.getY()/Math.max(1,root.getHeight()-v.getHeight())).apply();
+            }
             return true;
           default:return true;
         }
+      }
+    });
+    exitBubble.post(()->{
+      if(prefs.contains("bubble_x")&&prefs.contains("bubble_y")){
+        exitBubble.setX(Math.max(0,Math.min(root.getWidth()-exitBubble.getWidth(),
+          prefs.getFloat("bubble_x",1f)*(root.getWidth()-exitBubble.getWidth()))));
+        exitBubble.setY(Math.max(0,Math.min(root.getHeight()-exitBubble.getHeight(),
+          prefs.getFloat("bubble_y",1f)*(root.getHeight()-exitBubble.getHeight()))));
       }
     });
     adminHotspot.setOnClickListener(v->{
@@ -183,8 +208,14 @@ public class MainActivity extends Activity {
   }
   private boolean isAllowed(String url){
     Uri u=Uri.parse(url);
-    return "https".equalsIgnoreCase(u.getScheme())
-      && "app.thebarberone.com".equalsIgnoreCase(u.getHost());
+    if(!validScreenUrl(url))return false;
+    if("app.thebarberone.com".equalsIgnoreCase(u.getHost()))return true;
+    JSONArray arr=screens();
+    for(int i=0;i<arr.length();i++){
+      JSONObject obj=arr.optJSONObject(i);
+      if(obj!=null && url.equals(obj.optString("url","")))return true;
+    }
+    return false;
   }
 
   private void immersive(){
@@ -195,7 +226,7 @@ public class MainActivity extends Activity {
     if(focused)immersive();
   }
   private void load(){
-    String url=prefs.getString("url",DEFAULT_URL);
+    String url=prefs.getString("active_url",prefs.getString("url",DEFAULT_URL));
     if(!isAllowed(url))return;
     status.setVisibility(View.VISIBLE);
     status.setText("Chargement de la borne plein écran...\\n\\nSi la page reste blanche, touchez ici pour ouvrir Chrome.");
@@ -207,7 +238,7 @@ public class MainActivity extends Activity {
   }
   private void openChrome(){
     try {
-      Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(prefs.getString("url",DEFAULT_URL)));
+      Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(prefs.getString("active_url",prefs.getString("url",DEFAULT_URL))));
       intent.setPackage("com.android.chrome");
       startActivity(intent);
     }catch(Exception e){showError("Impossible d'ouvrir Chrome : "+e.getMessage());}
@@ -270,14 +301,16 @@ public class MainActivity extends Activity {
       }).show();
   }
   private void adminMenu(){
-    String[] actions={"Changer de salon","Actualiser la borne","Ouvrir dans Chrome","Changer le code PIN",kioskLockEnabled?"Désactiver le verrouillage":"Activer le verrouillage écran","Quitter le mode kiosque","Statut du verrouillage"};
+    String[] actions={"Choisir un écran","Gérer les liens","Changer de salon","Actualiser la borne","Ouvrir dans Chrome","Changer le code PIN",kioskLockEnabled?"Désactiver le verrouillage":"Activer le verrouillage écran","Quitter le mode kiosque","Statut du verrouillage"};
     new AlertDialog.Builder(this).setTitle("Administration Barber Pass")
       .setItems(actions,(d,which)->{
-        if(which==0)configure(true);
-        if(which==1)load();
-        if(which==2)openChrome();
-        if(which==3){prefs.edit().remove("pin").apply();setPin();}
-        if(which==4){
+        if(which==0)chooseScreen();
+        if(which==1)manageScreens();
+        if(which==2)configure(true);
+        if(which==3)load();
+        if(which==4)openChrome();
+        if(which==5){prefs.edit().remove("pin").apply();setPin();}
+        if(which==6){
           kioskLockEnabled=!kioskLockEnabled;
           prefs.edit().putBoolean("kiosk_lock",kioskLockEnabled).apply();
           if(kioskLockEnabled)new AlertDialog.Builder(this).setTitle("Verrouillage Android")
@@ -286,11 +319,124 @@ public class MainActivity extends Activity {
             .setNegativeButton("Annuler",(dd,ww)->{kioskLockEnabled=false;prefs.edit().putBoolean("kiosk_lock",false).apply();}).show();
           else stopKioskLock();
         }
-        if(which==5){stopKioskLock();kioskLockEnabled=false;prefs.edit().putBoolean("kiosk_lock",false).apply();finish();}
-        if(which==6)new AlertDialog.Builder(this).setTitle("Protection de la tablette")
+        if(which==7){stopKioskLock();kioskLockEnabled=false;prefs.edit().putBoolean("kiosk_lock",false).apply();finish();}
+        if(which==8)new AlertDialog.Builder(this).setTitle("Protection de la tablette")
           .setMessage(isDeviceOwner()?"Mode administrateur Android actif : Home, Retour et Applications récentes sont verrouillables.":"Mode administrateur Android non activé. Le simple épinglage peut être désactivé par les touches système. Une configuration Device Owner séparée est nécessaire pour bloquer Home et Applications récentes.")
           .setPositiveButton("OK",null).show();
       }).setNegativeButton("Fermer",null).show();
+  }
+
+  private JSONArray screens(){
+    try{
+      if(prefs.contains(SCREENS_KEY))return new JSONArray(prefs.getString(SCREENS_KEY,"[]"));
+    }catch(Exception ignored){}
+    JSONArray arr=new JSONArray();
+    JSONObject initial=new JSONObject();
+    try{
+      initial.put("name","Prise de rendez-vous");
+      initial.put("url",prefs.getString("url",DEFAULT_URL));
+      arr.put(initial);
+    }catch(Exception ignored){}
+    return arr;
+  }
+  private void saveScreens(JSONArray arr){prefs.edit().putString(SCREENS_KEY,arr.toString()).apply();}
+  private String screenName(JSONObject obj){return obj.optString("name","Écran");}
+  private void chooseScreen(){
+    JSONArray arr=screens();
+    if(arr.length()==0){manageScreens();return;}
+    String[] names=new String[arr.length()];
+    for(int i=0;i<arr.length();i++)names[i]=screenName(arr.optJSONObject(i));
+    new AlertDialog.Builder(this).setTitle("Afficher un écran")
+      .setItems(names,(d,i)->{
+        JSONObject obj=arr.optJSONObject(i);
+        if(obj==null)return;
+        String url=obj.optString("url","");
+        if(!validScreenUrl(url)){Toast.makeText(this,"Adresse non autorisée",Toast.LENGTH_LONG).show();return;}
+        prefs.edit().putString("active_url",url).apply();
+        load();
+      }).setNeutralButton("Gérer les liens",(d,w)->manageScreens())
+      .setNegativeButton("Annuler",null).show();
+  }
+  private boolean validScreenUrl(String value){
+    try{
+      Uri u=Uri.parse(value);
+      return "https".equalsIgnoreCase(u.getScheme())
+        && u.getHost()!=null && !u.getHost().trim().isEmpty()
+        && u.getUserInfo()==null;
+    }catch(Exception ignored){return false;}
+  }
+  private void manageScreens(){
+    JSONArray arr=screens();
+    String[] names=new String[arr.length()+1];
+    for(int i=0;i<arr.length();i++)names[i]=screenName(arr.optJSONObject(i));
+    names[arr.length()]="+ Ajouter un lien";
+    new AlertDialog.Builder(this).setTitle("Gérer les écrans")
+      .setItems(names,(d,i)->{
+        if(i==arr.length())editScreen(-1);
+        else screenActions(i);
+      }).setNegativeButton("Fermer",null).show();
+  }
+  private void screenActions(int index){
+    new AlertDialog.Builder(this).setTitle(screenName(screens().optJSONObject(index)))
+      .setItems(new String[]{"Afficher","Modifier","Supprimer"},(d,choice)->{
+        if(choice==0){
+          JSONObject obj=screens().optJSONObject(index);
+          if(obj!=null){
+            prefs.edit().putString("active_url",obj.optString("url",DEFAULT_URL)).apply();
+            load();
+          }
+        }else if(choice==1)editScreen(index);
+        else new AlertDialog.Builder(this).setTitle("Supprimer ce lien ?")
+          .setMessage("Cette action ne supprime pas le site internet.")
+          .setPositiveButton("Supprimer",(dd,w)->{
+            JSONArray old=screens(),updated=new JSONArray();
+            for(int i=0;i<old.length();i++)if(i!=index)updated.put(old.optJSONObject(i));
+            saveScreens(updated);manageScreens();
+          }).setNegativeButton("Annuler",null).show();
+      }).setNegativeButton("Retour",(d,w)->manageScreens()).show();
+  }
+  private void editScreen(int index){
+    JSONObject current=index>=0?screens().optJSONObject(index):null;
+    LinearLayout form=new LinearLayout(this);
+    form.setOrientation(LinearLayout.VERTICAL);
+    int pad=(int)(20*getResources().getDisplayMetrics().density);
+    form.setPadding(pad,pad,pad,pad);
+    EditText name=new EditText(this);
+    name.setSingleLine(true);name.setHint("Nom de l'écran");
+    name.setText(current==null?"":current.optString("name",""));
+    form.addView(name);
+    EditText url=new EditText(this);
+    url.setSingleLine(true);url.setHint("https://...");
+    url.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
+    url.setText(current==null?"":current.optString("url",""));
+    form.addView(url);
+    AlertDialog dialog=new AlertDialog.Builder(this)
+      .setTitle(index<0?"Ajouter un lien":"Modifier le lien").setView(form)
+      .setPositiveButton("Enregistrer",null).setNegativeButton("Annuler",null).create();
+    dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{
+      String label=name.getText().toString().trim(),link=url.getText().toString().trim();
+      if(label.isEmpty()){name.setError("Nom obligatoire");return;}
+      if(!validScreenUrl(link)){url.setError("Une adresse HTTPS valide est nécessaire");return;}
+      if(!"app.thebarberone.com".equalsIgnoreCase(Uri.parse(link).getHost())){
+        new AlertDialog.Builder(this).setTitle("Domaine externe")
+          .setMessage("Autoriser l'affichage de "+Uri.parse(link).getHost()+" dans la borne ? N'ajoutez que des sites de confiance.")
+          .setPositiveButton("Autoriser",(dd,w)->saveScreen(index,label,link,dialog))
+          .setNegativeButton("Annuler",null).show();
+      }else saveScreen(index,label,link,dialog);
+    }));
+    dialog.show();
+  }
+  private void saveScreen(int index,String name,String url,AlertDialog dialog){
+    JSONArray old=screens(),updated=new JSONArray();
+    try{
+      for(int i=0;i<old.length();i++){
+        if(i==index){JSONObject obj=new JSONObject();obj.put("name",name);obj.put("url",url);updated.put(obj);}
+        else updated.put(old.optJSONObject(i));
+      }
+      if(index<0){JSONObject obj=new JSONObject();obj.put("name",name);obj.put("url",url);updated.put(obj);}
+      saveScreens(updated);
+      dialog.dismiss();manageScreens();
+    }catch(Exception e){Toast.makeText(this,"Impossible d'enregistrer",Toast.LENGTH_LONG).show();}
   }
   @Override public void onBackPressed(){ /* prevent accidental web navigation */ }
   @Override protected void onDestroy(){
