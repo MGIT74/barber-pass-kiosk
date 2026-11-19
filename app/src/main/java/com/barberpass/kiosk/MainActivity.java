@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
       Gravity.TOP|Gravity.START);
     root.addView(adminHotspot,hp);
     exitBubble=new TextView(this);
-    exitBubble.setText("⚙");
+    exitBubble.setText("\u2699\uFE0E"); // Force monochrome text glyph, not green emoji
     exitBubble.setTextSize(25);
     exitBubble.setGravity(Gravity.CENTER);
     exitBubble.setTextColor(Color.WHITE);
