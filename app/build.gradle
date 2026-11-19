@@ -3,10 +3,10 @@ android {
     namespace 'com.barberpass.kiosk'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.barberpass.kiosk'
+        applicationId 'com.barberpass.kiosk.multiscreen'
         minSdk 24
         targetSdk 34
-        versionCode 14
-        versionName '2.3-test'
+        versionCode 1
+        versionName '1.8-multiscreen-test'
     }
 }
