@@ -5,8 +5,16 @@ android {
     defaultConfig {
         applicationId 'com.barberpass.kiosk.multiscreen'
         minSdk 24
-        targetSdk 34
+        targetSdk 28
         versionCode 1
         versionName '1.8-multiscreen-test'
+    }
+    buildTypes {
+        debug {
+            // Android 7 compatibility: include both JAR (v1) and APK (v2) signatures.
+            signingConfig signingConfigs.debug
+            signingConfig.enableV1Signing = true
+            signingConfig.enableV2Signing = true
+        }
     }
 }
